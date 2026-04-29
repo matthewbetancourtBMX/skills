@@ -28,7 +28,6 @@ Provider: `googleOauth`
 | Append rows below existing data | `appendRowsToSpreadsheet` | Adds at bottom only |
 | Overwrite rows starting at a row number | `updateRowsInSpreadsheet` | 1-based row index; starts at column A |
 | Delete a row | `deleteRowFromSpreadsheet` | Requires numeric `sheetId`; row index is **0-based** |
-| Get sheet names + numeric sheetIds | `getSpreadsheetMetadata` | Does not read cell values |
 | Read sheet contents | `getDriveFileContentById` | Exports as .xlsx → parsed as CSV-like text; lossy |
 | Write values, formulas, or formatting | `updateSpreadsheet` (batchUpdate) | Requires `sheetId`; see full rules below |
 | Add / delete / rename tabs, freeze rows | `updateSpreadsheet` (batchUpdate) | Uses `addSheet`, `deleteSheet`, `updateSheetProperties` |
@@ -46,7 +45,32 @@ Provider: `googleOauth`
 - Formulas (returns rendered values, not formula strings)
 - Structured row/column indexes
 
-**To get `sheetId`:** Call `getSpreadsheetMetadata` first. Returns sheet names, tab order, and numeric `sheetId` values. Required before any `deleteRowFromSpreadsheet` or `updateSpreadsheet` call targeting a specific tab.
+---
+
+## sheetId Resolution
+
+`sheetId` is a **numeric** value (not the tab name string). It is required for:
+- `deleteRowFromSpreadsheet`
+- `updateSpreadsheet` batchUpdate requests targeting a specific tab
+
+**Resolution rules — apply in order:**
+
+| Scenario | sheetId |
+|---|---|
+| Sheet was created this session | Use value retained in working memory |
+| Targeting the first tab of any sheet | Always `0` |
+| Pre-existing sheet, non-first tab | Extract `gid` from the sheet URL (see below) |
+| gid not available | **Stop and ask the user to provide it** |
+
+**Extracting gid from URL:**
+```
+https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=123456789
+                                                                ↑
+                                                        this value = sheetId
+```
+
+**If the user has not provided a URL with a `#gid=` fragment and the target tab is not the first tab — ask before proceeding:**
+> "To target that tab I need its sheet ID. Can you share the full sheet URL including the `#gid=` at the end, or open the tab and copy the URL from your browser?"
 
 ---
 
@@ -254,27 +278,12 @@ If a user requests one of these, tell them it is not available through the curre
 
 ---
 
-## sheetId Resolution
-
-`sheetId` is a **numeric** value (not the tab name string). It is required for:
-- `deleteRowFromSpreadsheet`
-- `updateSpreadsheet` requests targeting a specific tab
-
-**Resolution flow:**
-1. Call `getSpreadsheetMetadata` with the `spreadsheetId`
-2. Find the tab by name in the response
-3. Use its numeric `sheetId` in subsequent requests
-
-If the spreadsheet was created in the current session, retain `sheetId` in working memory — do not re-fetch.
-
----
-
 ## Memory Discipline
 
 After creating or reading a spreadsheet, retain in working memory:
 - `spreadsheetId`
 - `spreadsheetUrl`
-- Sheet tab names → numeric `sheetId` map
+- Sheet tab names → numeric `sheetId` / `gid` map
 
 Do not re-ask the user for these on follow-up operations within the same session.
 
@@ -310,7 +319,7 @@ Do not proceed with destructive operations (overwrite, delete) without explicit 
 | Overwrite rows | ✅ `updateRowsInSpreadsheet` |
 | Delete row | ✅ `deleteRowFromSpreadsheet` (needs numeric `sheetId`) |
 | Read contents | ✅ `getDriveFileContentById` (lossy) |
-| Get sheet metadata / sheetIds | ✅ `getSpreadsheetMetadata` |
+| Get sheet metadata / sheetIds | ❌ `getSpreadsheetMetadata` not available |
 | Set column / row width or height | ❌ Not available |
 | Auto-resize | ❌ Not available |
 | Sort / filter / banding / conditional formatting / merge | ❌ Not available |
